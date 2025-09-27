@@ -61,12 +61,17 @@ tmp/
 
 # Xcode
 *.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/
 build/
 *.ipa
 *.dSYM.zip
 *.dSYM
+
+# Xcode user-specific files
+iOSApp/iOSApp.xcodeproj/xcuserdata/
+iOSApp/iOSApp.xcodeproj/project.xcworkspace/xcuserdata/
 
 # Node modules (if any)
 node_modules/
