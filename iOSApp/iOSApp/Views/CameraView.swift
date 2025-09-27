@@ -3,61 +3,106 @@ import AVFoundation
 
 struct CameraView: View {
     @StateObject private var cameraManager = CameraManager()
+    @State private var showingSettings = false
     
     var body: some View {
-        VStack {
-            // Camera Preview
-            CameraPreviewView(cameraManager: cameraManager)
-                .aspectRatio(4/3, contentMode: .fit)
-                .clipped()
-                .cornerRadius(12)
-                .padding()
-            
-            // Controls
-            VStack(spacing: 20) {
-                if cameraManager.isSessionRunning {
-                    Text("Camera is running! 📷")
-                        .font(.headline)
-                        .foregroundColor(.green)
-                } else {
-                    Text("Camera not running")
-                        .font(.headline)
-                        .foregroundColor(.red)
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                // Top Bar - Settings and Camera Controls
+                HStack {
+                    // Settings Button - Top Left
+                    Button(action: {
+                        showingSettings.toggle()
+                    }) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .padding(8)
+                            .background(Color.black.opacity(0.6))
+                            .cornerRadius(8)
+                    }
+                    
+                    Spacer()
+                    
+                    // Camera Controls - Top Right
+                    HStack(spacing: 8) {
+                        // Camera Status
+                        if cameraManager.isSessionRunning {
+                            Text("📷 Active")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.2))
+                                .cornerRadius(6)
+                        } else {
+                            Text("⏸️ Inactive")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.red.opacity(0.2))
+                                .cornerRadius(6)
+                        }
+                        
+                        // Camera Flip Button
+                        Button(action: {
+                            cameraManager.switchCamera()
+                        }) {
+                            Image(systemName: "camera.rotate")
+                                .font(.title2)
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(8)
+                        }
+                        
+                        if let error = cameraManager.error {
+                            Text("⚠️")
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    }
                 }
+                .padding(.horizontal)
+                .padding(.top, 8)
                 
-                if let error = cameraManager.error {
-                    Text("Error: \(error.localizedDescription)")
-                        .font(.caption)
-                        .foregroundColor(.red)
+                // Camera Preview - Takes 2/3 of screen
+                CameraPreviewView(cameraManager: cameraManager)
+                    .frame(height: geometry.size.height * 2/3)
+                    .clipped()
+                    .onTapGesture {
+                        // Toggle camera on tap
+                        if cameraManager.isSessionRunning {
+                            cameraManager.stopSession()
+                        } else {
+                            cameraManager.startSession()
+                        }
+                    }
+                
+                // Text Box - Takes 1/3 of screen
+                VStack {
+                    Text("This is a placeholder.")
+                        .font(.title2)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
                         .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding()
+                        .background(Color(.systemGray6))
                 }
-                
-                Button(action: {
-                    if cameraManager.isSessionRunning {
-                        cameraManager.stopSession()
-                    } else {
-                        cameraManager.startSession()
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: cameraManager.isSessionRunning ? "stop.circle.fill" : "play.circle.fill")
-                        Text(cameraManager.isSessionRunning ? "Stop Camera" : "Start Camera")
-                    }
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(cameraManager.isSessionRunning ? Color.red : Color.blue)
-                    .cornerRadius(10)
-                }
+                .frame(height: geometry.size.height * 1/3)
+                .background(Color(.systemBackground))
             }
-            .padding()
-            
-            Spacer()
         }
-        .navigationTitle("Camera")
         .onAppear {
             Task {
                 await cameraManager.setupCamera()
+                cameraManager.startSession() // Auto-start camera
             }
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
         }
     }
 }
@@ -70,6 +115,7 @@ class CameraManager: NSObject, ObservableObject {
     private let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
+    private var currentCameraPosition: AVCaptureDevice.Position = .front
     
     enum CameraError: Error, LocalizedError {
         case permissionDenied
@@ -187,6 +233,48 @@ class CameraManager: NSObject, ObservableObject {
     var captureSession: AVCaptureSession {
         return session
     }
+    
+    /// Switch between front and back camera
+    func switchCamera() {
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.session.beginConfiguration()
+            
+            // Remove current input
+            if let currentInput = self.session.inputs.first {
+                self.session.removeInput(currentInput)
+            }
+            
+            // Switch camera position
+            self.currentCameraPosition = self.currentCameraPosition == .front ? .back : .front
+            
+            // Add new input
+            guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: self.currentCameraPosition),
+                  let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
+                  self.session.canAddInput(videoInput) else {
+                self.session.commitConfiguration()
+                DispatchQueue.main.async {
+                    self.error = .setupFailed
+                }
+                return
+            }
+            
+            self.session.addInput(videoInput)
+            
+            // Update video connection orientation and mirroring
+            if let connection = self.videoOutput.connection(with: .video) {
+                if connection.isVideoMirroringSupported {
+                    connection.isVideoMirrored = (self.currentCameraPosition == .front)
+                }
+                if connection.isVideoOrientationSupported {
+                    connection.videoOrientation = .portrait
+                }
+            }
+            
+            self.session.commitConfiguration()
+        }
+    }
 }
 
 // Camera Preview View
@@ -215,6 +303,100 @@ class CameraPreview: UIView {
         previewLayer = layer as? AVCaptureVideoPreviewLayer
         previewLayer?.session = session
         previewLayer?.videoGravity = .resizeAspectFill
+    }
+}
+
+// Settings View
+struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(spacing: 8) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 50))
+                        .foregroundColor(.blue)
+                    
+                    Text("Settings")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    
+                    Text("Configure your sign language app")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 20)
+                
+                Spacer()
+                
+                // Settings Options (Placeholders)
+                VStack(spacing: 16) {
+                    SettingsRow(icon: "camera.fill", title: "Camera Settings", description: "Configure camera preferences")
+                    SettingsRow(icon: "brain.head.profile", title: "Model Settings", description: "Adjust AI model parameters")
+                    SettingsRow(icon: "textformat", title: "Language Settings", description: "Choose output language")
+                    SettingsRow(icon: "bell.fill", title: "Notifications", description: "Manage app notifications")
+                    SettingsRow(icon: "questionmark.circle.fill", title: "Help & Support", description: "Get help and support")
+                }
+                
+                Spacer()
+                
+                // Footer
+                Text("Sign Language Recognition App")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 20)
+            }
+            .padding()
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Settings Row Component
+struct SettingsRow: View {
+    let icon: String
+    let title: String
+    let description: String
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(.blue)
+                .frame(width: 30)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Text(description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .onTapGesture {
+            // Placeholder action
+            print("Tapped: \(title)")
+        }
     }
 }
 
