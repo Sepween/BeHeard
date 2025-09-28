@@ -12,6 +12,8 @@ import json
 from collections import deque, Counter
 from typing import List, Optional
 from openai import OpenAI
+from dotenv import load_dotenv
+load_dotenv()
 
 # Add the prediction_pipeline directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'prediction_pipeline', 'src'))
@@ -34,9 +36,7 @@ app.add_middleware(
 predictor = None
 
 # Initialize OpenAI client
-client = OpenAI(
-  api_key="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"
-)
+client = OpenAI(api_key=api_key)
 
 def initialize_predictor():
     """Initialize the sign language predictor"""
