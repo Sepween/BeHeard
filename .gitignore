@@ -18,16 +18,11 @@ ehthumbs.db
 Thumbs.db
 
 # Large model files and data
-*.pth
 *.pt
 *.h5
 *.pkl
 *.joblib
-*.npy
-*.npz
-model/
-models/
-data/
+prediction_pipeline/data/orig_data/
 datasets/
 checkpoints/
 
@@ -36,9 +31,6 @@ checkpoints/
 *.avi
 *.mov
 *.mkv
-*.jpg
-*.jpeg
-*.png
 *.gif
 *.bmp
 *.tiff
