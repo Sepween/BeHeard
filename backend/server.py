@@ -196,16 +196,18 @@ async def process_text(request: TextProcessRequest):
             model="gpt-5-nano",
             input=(
                 "The input will be a jumbled string without spaces, like 'thisiprety'. "
-                "Turn it into a short, natural prose sentence. "
-                "Example: 'thisiprety' → 'This is pretty.'\n\n"
-                "If the input cannot be reasonably transcribed into a prose sentence, "
-                f"just return exactly: {request.text}.\n\n"
+                "Turn it into a natural prose sentence. "
+                "If the input cannot be reasonably transcribed into a prose sentence, only return your best guess output, nothing else. If input is vibecozingis9rn then output vibe coding is fun "
+                # "just return exactly: cannot determine.\n\n"
                 f"Now process this: {request.text}"
             ),
         )
 
 
+
         output_text = response.output_text.strip()
+        if output_text == "cannot determine":
+            output_text = request.text
         print(f"OUTPUT TEXT: {output_text}")
 
         return {"prose": output_text}
