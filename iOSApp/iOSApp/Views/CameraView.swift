@@ -66,30 +66,76 @@ struct CameraView: View {
                 CameraPreviewView(cameraManager: cameraManager)
                     .frame(height: geometry.size.height * 2/3)
                     .clipped()
+                    .cornerRadius(12)
+                    .overlay(
+                        // Top left corner - Reset button
+                        Button(action: {
+                            cameraManager.clearOutputText()
+                        }) {
+                            Text("RESET")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.white.opacity(0.9))
+                                .cornerRadius(6)
+                        }
+                        .padding(.top, 8)
+                        .padding(.leading, 8),
+                        alignment: .topLeading
+                    )
+                    .overlay(
+                        // Top right corner info
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("Current: \(cameraManager.framePrediction.uppercased())")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(6)
+                            
+                            Text("Frames: \(cameraManager.frameCount)")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(6)
+                        }
+                        .padding(.top, 8)
+                        .padding(.trailing, 8),
+                        alignment: .topTrailing
+                    )
                     .onTapGesture {
                         cameraManager.toggleCameraSession()
                     }
                 
                 // Status / Output
-                VStack(spacing: 10) {
-                    Text(cameraManager.testResult)
-                        .font(.title2)
-                        .fontWeight(.medium)
-                        .multilineTextAlignment(.center)
-                    
-                    Text("Frames sent: \(cameraManager.frameCount)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    if cameraManager.isProcessingFrame {
-                        ProgressView().scaleEffect(0.8)
+                VStack(spacing: 0) {
+                    // Main prediction display - takes full bottom space
+                    ScrollView {
+                        ScrollViewReader { proxy in
+                            Text(cameraManager.finalOutputText.isEmpty ? "Start signing..." : cameraManager.finalOutputText)
+                                .font(.title)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.blue)
+                                .multilineTextAlignment(.leading)
+                                .lineLimit(nil) // allow wrapping
+                                .frame(maxWidth: .infinity, alignment: .leading) // fill width but left-align
+                                .padding(30)
+                                .id("textContent")
+                                .onChange(of: cameraManager.finalOutputText) { _ in
+                                    // Auto-scroll to bottom when text changes
+                                    withAnimation(.easeOut(duration: 0.3)) {
+                                        proxy.scrollTo("textContent", anchor: .bottom)
+                                    }
+                                }
+                        }
                     }
-                    
-                    Spacer()
+                    .background(Color.black)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding()
-                .background(Color(.systemGray6))
                 .frame(height: geometry.size.height * 1/3)
             }
         }
@@ -113,14 +159,27 @@ class CameraManager: NSObject, ObservableObject {
     @Published var isProcessingFrame = false
     @Published var frameCount = 0
     
+    // Prediction state variables (like React useState)
+    @Published var framePrediction = "unknown"
+    @Published var status = "waiting"
+    @Published var predictionText = "No prediction yet..."
+    
+    // String storage system for concatenating characters
+    @Published var finalOutputText = ""
+    private let maxTextLength = 200
+    
+    // Buffer system for improving prediction accuracy
+    private var predictionBuffer: [String] = []
+    private let bufferSize = 30
+    
     private let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
-    private var currentCameraPosition: AVCaptureDevice.Position = .front
+    private var currentCameraPosition: AVCaptureDevice.Position = .back
     
-    private let baseURL = "http://35.3.45.24:8001"
+    private let baseURL = "http://100.64.9.182:8001"
     private var lastProcessTime = Date()
-    private let processingInterval: TimeInterval = 1.0 // send ~1 frame per second
+    private let processingInterval: TimeInterval = 0.05 // send ~2.5 frames per second
     private var lastTapTime = Date()
     private let tapDebounceInterval: TimeInterval = 1.0
     
@@ -148,7 +207,7 @@ class CameraManager: NSObject, ObservableObject {
                 self.session.sessionPreset = .high
             }
             
-            guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
+            guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: self.currentCameraPosition),
                   let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
                   self.session.canAddInput(videoInput) else {
                 self.session.commitConfiguration()
@@ -171,15 +230,20 @@ class CameraManager: NSObject, ObservableObject {
     
     // Start
     func startSession() {
+        print("DEBUG: startSession called")
         sessionQueue.async {
             if !self.session.isRunning {
+                print("DEBUG: Starting camera session")
                 self.videoOutput.setSampleBufferDelegate(self, queue: self.sessionQueue)
                 self.session.startRunning()
                 DispatchQueue.main.async {
                     self.isSessionRunning = true
                     self.testResult = "Camera active - sending frames..."
                     self.frameCount = 0
+                    print("DEBUG: Camera session started, isSessionRunning: \(self.isSessionRunning)")
                 }
+            } else {
+                print("DEBUG: Camera session already running")
             }
         }
     }
@@ -238,6 +302,73 @@ class CameraManager: NSObject, ObservableObject {
         if now.timeIntervalSince(lastTapTime) < tapDebounceInterval { return }
         lastTapTime = now
         if session.isRunning { stopSession() } else { startSession() }
+    }
+    
+    // Method to handle character concatenation with buffer system
+    private func addCharacterToOutput(_ character: String) {
+        // Ignore "unknown" responses
+        if character.lowercased() == "unknown" {
+            return
+        }
+        
+        // Add character to buffer
+        predictionBuffer.append(character)
+        
+        // If buffer is full, process it
+        if predictionBuffer.count >= bufferSize {
+            let mostFrequentChar = getMostFrequentCharacter(from: predictionBuffer)
+            
+            // Add the most frequent character to the final output text
+            finalOutputText += mostFrequentChar
+            
+            // Remove consecutive duplicate characters
+            finalOutputText = removeConsecutiveDuplicates(finalOutputText)
+            
+            // If text exceeds 200 characters, remove the first character (circular buffer)
+            if finalOutputText.count > maxTextLength {
+                finalOutputText = String(finalOutputText.dropFirst())
+            }
+            
+            // Clear the buffer for next batch
+            predictionBuffer.removeAll()
+        }
+    }
+    
+    // Helper method to find the most frequent character in the buffer
+    private func getMostFrequentCharacter(from buffer: [String]) -> String {
+        var frequencyCount: [String: Int] = [:]
+        
+        // Count frequency of each character
+        for char in buffer {
+            frequencyCount[char, default: 0] += 1
+        }
+        
+        // Find the character with highest frequency
+        let mostFrequent = frequencyCount.max { $0.value < $1.value }
+        return mostFrequent?.key ?? buffer.last ?? ""
+    }
+    
+    // Helper method to remove consecutive duplicate characters
+    private func removeConsecutiveDuplicates(_ text: String) -> String {
+        guard !text.isEmpty else { return text }
+        
+        var result = ""
+        var lastChar: Character? = nil
+        
+        for char in text {
+            if char.lowercased() != lastChar?.lowercased() {
+                result.append(char)
+                lastChar = char
+            }
+        }
+        
+        return result
+    }
+    
+    // Method to clear the output text
+    func clearOutputText() {
+        finalOutputText = ""
+        predictionBuffer.removeAll()
     }
 }
 
@@ -310,33 +441,54 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
-        guard isSessionRunning else { return }
+        print("DEBUG: captureOutput called, isSessionRunning: \(isSessionRunning)")
+        guard isSessionRunning else { 
+            print("DEBUG: Session not running, returning")
+            return 
+        }
         let now = Date()
-        if now.timeIntervalSince(lastProcessTime) >= processingInterval {
+        let timeSinceLastProcess = now.timeIntervalSince(lastProcessTime)
+        print("DEBUG: Time since last process: \(timeSinceLastProcess), interval: \(processingInterval)")
+        if timeSinceLastProcess >= processingInterval {
+            print("DEBUG: Processing frame for backend")
             lastProcessTime = now
             processFrameForBackend(sampleBuffer)
         }
     }
     
     private func processFrameForBackend(_ sampleBuffer: CMSampleBuffer) {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        print("DEBUG: processFrameForBackend called")
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { 
+            print("DEBUG: Failed to get pixel buffer")
+            return 
+        }
         
         DispatchQueue.main.async {
             self.isProcessingFrame = true
             self.frameCount += 1
+            print("DEBUG: Frame count: \(self.frameCount)")
         }
         
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         let context = CIContext()
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
-        let uiImage = UIImage(cgImage: cgImage)
+        
+        // Create UIImage with correct orientation to prevent rotation
+        // For rear camera, use .up orientation; for front camera, use .upMirrored
+        let orientation: UIImage.Orientation = currentCameraPosition == .back ? .up : .upMirrored
+        let uiImage = UIImage(cgImage: cgImage, scale: 1.0, orientation: orientation)
         
         guard let jpegData = uiImage.jpegData(compressionQuality: 0.4) else { return }
         sendFrameToBackend(imageData: jpegData)
     }
     
     private func sendFrameToBackend(imageData: Data) {
-        guard let url = URL(string: "\(baseURL)/test_predict/") else { return }
+        print("DEBUG: sendFrameToBackend called with imageData size: \(imageData.count)")
+        guard let url = URL(string: "\(baseURL)/predict_sign/") else { 
+            print("DEBUG: Failed to create URL")
+            return 
+        }
+        print("DEBUG: Sending request to: \(url)")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -349,14 +501,44 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
             DispatchQueue.main.async {
                 self.isProcessingFrame = false
                 if let error = error {
+                    self.status = "error"
+                    self.framePrediction = "error"
                     self.testResult = "Error: \(error.localizedDescription)"
                     return
                 }
-                if let data = data,
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let message = json["message"] as? String {
-                    self.testResult = message
+                
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    self.status = "error"
+                    self.framePrediction = "error"
+                    self.testResult = "Invalid response"
+                    return
+                }
+                
+                // Parse prediction results (like React useState updates)
+                if let responseStatus = json["status"] as? String {
+                    // Update status
+                    self.status = responseStatus
+                    
+                    if responseStatus == "success" {
+                        // Update frame prediction
+                        if let framePred = json["frame_prediction"] as? String {
+                            self.framePrediction = framePred
+                            // Add character to final output text (ignores "unknown")
+                            self.addCharacterToOutput(framePred)
+                        }
+                        
+                        // Update test result for debugging
+                        if let message = json["message"] as? String {
+                            self.testResult = message
+                        }
+                    } else {
+                        self.framePrediction = "error"
+                        self.testResult = "Prediction failed: \(responseStatus)"
+                    }
                 } else {
+                    self.status = "error"
+                    self.framePrediction = "error"
                     self.testResult = "Invalid response"
                 }
             }
