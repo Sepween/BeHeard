@@ -197,7 +197,7 @@ async def process_text(request: TextProcessRequest):
             input=(
                 "The input will be a jumbled string without spaces, like 'thisiprety'. "
                 "Turn it into a natural prose sentence. "
-                "If the input cannot be reasonably transcribed into a prose sentence, only return your best guess output, nothing else. If input is vibecozingis9rn then output vibe coding is fun "
+                "If the input cannot be reasonably transcribed into a prose sentence, only return your best guess output, nothing else. "
                 # "just return exactly: cannot determine.\n\n"
                 f"Now process this: {request.text}"
             ),
