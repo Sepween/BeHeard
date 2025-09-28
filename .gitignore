@@ -1,0 +1,85 @@
+# Python virtual environments
+venv/
+venv_mediapipe/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Large model files and data
+*.pth
+*.pt
+*.h5
+*.pkl
+*.joblib
+*.npy
+*.npz
+model/
+models/
+data/
+datasets/
+checkpoints/
+
+# Media files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.webp
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+logs/
+temp/
+tmp/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Xcode user-specific files
+iOSApp/iOSApp.xcodeproj/xcuserdata/
+iOSApp/iOSApp.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Node modules (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Large directories to exclude
+slr/
+resources/
+ss/
