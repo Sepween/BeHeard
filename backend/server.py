@@ -152,15 +152,15 @@ async def predict_sign_language(request: ImageRequest):
         img_rotated = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
         
         # Save the rotated image to iphone_images folder
-        # import time
-        # timestamp = int(time.time() * 1000)  # milliseconds timestamp
-        # iphone_images_dir = "iphone_images"
-        # os.makedirs(iphone_images_dir, exist_ok=True)
-        # image_filename = f"{iphone_images_dir}/iphone_image_{timestamp}.jpg"
-        # cv2.imwrite(image_filename, img_rotated)
-        # print(f"INFO: Saved rotated image to {image_filename}")
+        import time
+        timestamp = int(time.time() * 1000)  # milliseconds timestamp
+        iphone_images_dir = "iphone_images"
+        os.makedirs(iphone_images_dir, exist_ok=True)
+        image_filename = f"{iphone_images_dir}/iphone_image_{timestamp}.jpg"
+        cv2.imwrite(image_filename, img_rotated)
+        print(f"INFO: Saved rotated image to {image_filename}")
         
-        # print(f"INFO: Processing rotated image for sign language prediction, shape: {img_rotated.shape}")
+        print(f"INFO: Processing rotated image for sign language prediction, shape: {img_rotated.shape}")
         
         # Extract hand landmarks using the rotated image
         landmarks = predictor.extract_hand_landmarks(img_rotated)
