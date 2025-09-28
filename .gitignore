@@ -21,7 +21,7 @@ Thumbs.db
 *.pt
 *.h5
 *.joblib
-prediction_pipeline/data/orig_data/
+backend/prediction_pipeline/data/orig_data/
 datasets/
 checkpoints/
 

@@ -36,7 +36,7 @@ app.add_middleware(
 predictor = None
 
 # Initialize OpenAI client
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def initialize_predictor():
     """Initialize the sign language predictor"""
