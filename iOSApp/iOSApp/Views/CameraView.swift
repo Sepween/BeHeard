@@ -68,18 +68,33 @@ struct CameraView: View {
                     .clipped()
                     .cornerRadius(12)
                     .overlay(
-                        // Top left corner - Reset button
-                        Button(action: {
-                            cameraManager.clearOutputText()
-                        }) {
-                            Text("RESET")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.white.opacity(0.9))
-                                .cornerRadius(6)
+                        // Top left corner - Reset and GPT buttons
+                        VStack(spacing: 8) {
+                            Button(action: {
+                                cameraManager.clearOutputText()
+                            }) {
+                                Text("RESET")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.black)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.white.opacity(0.9))
+                                    .cornerRadius(6)
+                            }
+                            
+                            Button(action: {
+                                cameraManager.callGPTAPI()
+                            }) {
+                                Text("GPT")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.black)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.blue.opacity(0.9))
+                                    .cornerRadius(6)
+                            }
                         }
                         .padding(.top, 8)
                         .padding(.leading, 8),
@@ -117,7 +132,11 @@ struct CameraView: View {
                     // Main prediction display - takes full bottom space
                     ScrollView {
                         ScrollViewReader { proxy in
-                            Text(cameraManager.finalOutputText.isEmpty ? "Start signing..." : cameraManager.finalOutputText)
+                            Text(cameraManager.finalOutputText.isEmpty ? "Currently analyzing sign language gesture..." : cameraManager.finalOutputText)
+                                .onChange(of: cameraManager.finalOutputText) { newValue in
+                                    print("DEBUG: Text display updated to: '\(newValue)'")
+                                    print("DEBUG: Camera session running: \(cameraManager.isSessionRunning)")
+                                }
                                 .font(.title)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.blue)
@@ -170,7 +189,10 @@ class CameraManager: NSObject, ObservableObject {
     
     // Buffer system for improving prediction accuracy
     private var predictionBuffer: [String] = []
-    private let bufferSize = 30
+    private let bufferSize = 20
+    
+    // GPT processing on camera stop
+    private var rawString = "" // Raw accumulated string from predictions
     
     private let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
@@ -179,7 +201,7 @@ class CameraManager: NSObject, ObservableObject {
     
     private let baseURL = "http://100.64.9.182:8001"
     private var lastProcessTime = Date()
-    private let processingInterval: TimeInterval = 0.05 // send ~2.5 frames per second
+    private let processingInterval: TimeInterval = 0.05
     private var lastTapTime = Date()
     private let tapDebounceInterval: TimeInterval = 1.0
     
@@ -240,7 +262,14 @@ class CameraManager: NSObject, ObservableObject {
                     self.isSessionRunning = true
                     self.testResult = "Camera active - sending frames..."
                     self.frameCount = 0
+                    
+                    // Reset text when starting camera
+                    self.finalOutputText = ""
+                    self.rawString = ""
+                    self.predictionBuffer.removeAll()
+                    
                     print("DEBUG: Camera session started, isSessionRunning: \(self.isSessionRunning)")
+                    print("DEBUG: Reset text for new session")
                 }
             } else {
                 print("DEBUG: Camera session already running")
@@ -259,6 +288,12 @@ class CameraManager: NSObject, ObservableObject {
                 self.isSessionRunning = false
                 self.isProcessingFrame = false
                 self.testResult = "Camera stopped"
+                
+                print("DEBUG: Camera stopped, raw string is: '\(self.rawString)'")
+                print("DEBUG: About to call GPT processing, isSessionRunning: \(self.isSessionRunning)")
+                
+                // Process raw string with GPT when camera stops
+                self.processWithGPTOnCameraStop()
             }
         }
     }
@@ -318,16 +353,18 @@ class CameraManager: NSObject, ObservableObject {
         if predictionBuffer.count >= bufferSize {
             let mostFrequentChar = getMostFrequentCharacter(from: predictionBuffer)
             
-            // Add the most frequent character to the final output text
-            finalOutputText += mostFrequentChar
+            // Add the most frequent character to the raw string
+            rawString += mostFrequentChar
             
-            // Remove consecutive duplicate characters
-            finalOutputText = removeConsecutiveDuplicates(finalOutputText)
+            // Remove consecutive duplicate characters from raw string
+            rawString = removeConsecutiveDuplicates(rawString)
             
-            // If text exceeds 200 characters, remove the first character (circular buffer)
-            if finalOutputText.count > maxTextLength {
-                finalOutputText = String(finalOutputText.dropFirst())
+            // If raw string exceeds 200 characters, remove the first character (circular buffer)
+            if rawString.count > maxTextLength {
+                rawString = String(rawString.dropFirst())
             }
+            
+            print("DEBUG: Raw string updated to: '\(rawString)'")
             
             // Clear the buffer for next batch
             predictionBuffer.removeAll()
@@ -368,7 +405,123 @@ class CameraManager: NSObject, ObservableObject {
     // Method to clear the output text
     func clearOutputText() {
         finalOutputText = ""
+        rawString = ""
         predictionBuffer.removeAll()
+    }
+    
+    // Method to process with GPT when camera stops
+    private func processWithGPTOnCameraStop() {
+        print("DEBUG: processWithGPTOnCameraStop called")
+        print("DEBUG: rawString.isEmpty: \(rawString.isEmpty)")
+        print("DEBUG: rawString content: '\(rawString)'")
+        
+        guard !rawString.isEmpty else {
+            print("DEBUG: No raw string to process with GPT")
+            return
+        }
+        
+        print("DEBUG: Processing raw string with GPT on camera stop: '\(rawString)'")
+        
+        guard let url = URL(string: "\(baseURL)/process_text/") else {
+            print("DEBUG: Invalid URL for GPT API")
+            // Fallback to showing raw string
+            finalOutputText = rawString
+            print("DEBUG: Fallback due to invalid URL - showing raw string: '\(rawString)'")
+            print("DEBUG: isSessionRunning: \(isSessionRunning)")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let requestBody: [String: Any] = ["text": rawString]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: requestBody)
+        
+        print("DEBUG: Sending GPT request with raw string: '\(rawString)'")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                print("DEBUG: GPT API response received")
+                
+                if let error = error {
+                    print("DEBUG: GPT API request error: \(error)")
+                    // Fallback to showing raw string
+                    self.finalOutputText = self.rawString
+                    print("DEBUG: Fallback - showing raw string: '\(self.rawString)'")
+                    return
+                }
+                
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    print("DEBUG: Invalid response from GPT API")
+                    // Fallback to showing raw string
+                    self.finalOutputText = self.rawString
+                    print("DEBUG: Fallback - showing raw string: '\(self.rawString)'")
+                    return
+                }
+                
+                print("DEBUG: GPT API response: \(json)")
+                
+                if let processedText = json["prose"] as? String {
+                    print("DEBUG: GPT processed text: '\(processedText)'")
+                    // Replace finalOutputText with GPT result
+                    self.finalOutputText = processedText
+                    print("DEBUG: Updated finalOutputText to: '\(processedText)'")
+                    print("DEBUG: isSessionRunning: \(self.isSessionRunning)")
+                    print("DEBUG: finalOutputText is now: '\(self.finalOutputText)'")
+                } else {
+                    // Fallback to showing raw string
+                    self.finalOutputText = self.rawString
+                    print("DEBUG: No prose in response - showing raw string: '\(self.rawString)'")
+                    print("DEBUG: Available keys in response: \(Array(json.keys))")
+                    print("DEBUG: isSessionRunning: \(self.isSessionRunning)")
+                    print("DEBUG: finalOutputText is now: '\(self.finalOutputText)'")
+                }
+            }
+        }.resume()
+    }
+    
+    // Method to call GPT API with test input
+    func callGPTAPI() {
+        print("DEBUG: Calling GPT API with test input")
+        
+        guard let url = URL(string: "\(baseURL)/process_text/") else {
+            print("DEBUG: Invalid URL for GPT API")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let requestBody: [String: Any] = ["text": "thsgoodday"]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: requestBody)
+        
+        print("DEBUG: Sending GPT request with body: \(requestBody)")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("DEBUG: GPT API request error: \(error)")
+                    return
+                }
+                
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    print("DEBUG: Invalid response from GPT API")
+                    return
+                }
+                
+                print("DEBUG: GPT API response: \(json)")
+                
+                if let processedText = json["prose"] as? String {
+                    print("DEBUG: GPT processed text: '\(processedText)'")
+                    // Update the display with the processed text
+                    self.finalOutputText = processedText
+                }
+            }
+        }.resume()
     }
 }
 

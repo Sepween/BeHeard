@@ -11,6 +11,7 @@ import pickle
 import json
 from collections import deque, Counter
 from typing import List, Optional
+from openai import OpenAI
 
 # Add the prediction_pipeline directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'prediction_pipeline', 'src'))
@@ -31,6 +32,11 @@ app.add_middleware(
 
 # Global predictor instance
 predictor = None
+
+# Initialize OpenAI client
+client = OpenAI(
+  api_key="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"
+)
 
 def initialize_predictor():
     """Initialize the sign language predictor"""
@@ -79,6 +85,10 @@ async def startup_event():
 class ImageRequest(BaseModel):
     image: str  # Base64-encoded string
 
+# Data model for text processing request
+class TextProcessRequest(BaseModel):
+    text: str  # Input text to be processed
+
 @app.get("/")
 async def root():
     """Root endpoint"""
@@ -89,41 +99,7 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "message": "Backend is running"}
 
-# @app.post("/test_predict/")
-# async def test_predict(request: ImageRequest):
-    """
-    Test endpoint that receives Base64 image and returns confirmation
-    """
-    try:
-        # Decode base64 -> raw bytes
-        img_bytes = base64.b64decode(request.image)
 
-        # Convert bytes -> numpy array
-        nparr = np.frombuffer(img_bytes, np.uint8)
-
-        # Decode image using OpenCV (BGR by default)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            raise ValueError("Failed to decode image")
-
-        # Convert to RGB
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        # Debug info
-        print(f"INFO: Received image with shape: {img_rgb.shape}")
-        print(f"INFO: First pixel RGB values: {img_rgb[0,0].tolist()}")
-
-        return {
-            "status": "success",
-            "message": "Image received",
-            "received_shape": list(img_rgb.shape),  # [height, width, channels]
-            "total_pixels": int(img_rgb.size),
-            "dtype": str(img_rgb.dtype)
-        }
-
-    except Exception as e:
-        print(f"ERROR: Failed to process image: {e}")
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
 @app.post("/predict_sign/")
 async def predict_sign_language(request: ImageRequest):
@@ -205,26 +181,44 @@ async def predict_sign_language(request: ImageRequest):
         print(f"ERROR: Sign language prediction failed: {e}")
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
-# @app.post("/reset_prediction_window/")
-# async def reset_prediction_window():
-#     """
-#     Reset the prediction sliding window
-#     """
-#     if predictor is None:
-#         raise HTTPException(
-#             status_code=503, 
-#             detail="Prediction service not available. Model files may be missing."
-#         )
-    
-#     try:
-#         predictor.reset_window()
-#         return {
-#             "status": "success",
-#             "message": "Prediction window reset successfully"
-#         }
-#     except Exception as e:
-#         print(f"ERROR: Failed to reset prediction window: {e}")
-#         raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
+
+@app.post("/process_text/")
+async def process_text(request: TextProcessRequest):
+    """
+    Text processing endpoint that uses OpenAI to convert jumbled text to natural prose
+    """
+    try:
+        # Log input
+        print(f"INPUT TEXT: {request.text}")
+
+        # Use f-string for interpolation
+        response = client.responses.create(
+            model="gpt-5-nano",
+            input=(
+                "The input will be a jumbled string without spaces, like 'thisiprety'. "
+                "Turn it into a short, natural prose sentence. "
+                "Example: 'thisiprety' → 'This is pretty.'\n\n"
+                "If the input cannot be reasonably transcribed into a prose sentence, "
+                "just return exactly: 'Cannot process sentence, please retry'.\n\n"
+                f"Now process this: {request.text}"
+            ),
+        )
+
+
+        output_text = response.output_text.strip()
+        print(f"OUTPUT TEXT: {output_text}")
+
+        return {"prose": output_text}
+        
+    except Exception as e:
+        print(f"ERROR: Text processing failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Text processing failed: {str(e)}"
+        )
+
+
+
 
 if __name__ == "__main__":
     import uvicorn
@@ -233,5 +227,6 @@ if __name__ == "__main__":
     print("Health check: http://localhost:8001/health")
     print("Test endpoint: http://localhost:8001/test_predict/")
     print("Sign language prediction: http://localhost:8001/predict_sign/")
+    print("Text processing: http://localhost:8001/process_text/")
     print("Reset prediction window: http://localhost:8001/reset_prediction_window/")
     uvicorn.run(app, host="0.0.0.0", port=8001)
