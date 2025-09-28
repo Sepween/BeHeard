@@ -13,15 +13,19 @@ struct CameraView: View {
             VStack(spacing: 0) {
                 // Top Bar
                 HStack {
-                    Button(action: { showingSettings.toggle() }) {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.title2)
-                            .foregroundColor(.white)
-                            .padding(8)
-                            .background(Color.black.opacity(0.6))
-                            .cornerRadius(8)
+                    Button(action: {
+                        cameraManager.clearOutputText()
+                    }) {
+                        Text("RESET")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.9))
+                            .cornerRadius(6)
                     }
-                    
+
                     Spacer()
                     
                     HStack(spacing: 8) {
@@ -68,39 +72,6 @@ struct CameraView: View {
                     .clipped()
                     .cornerRadius(12)
                     .overlay(
-                        // Top left corner - Reset and GPT buttons
-                        VStack(spacing: 8) {
-                            Button(action: {
-                                cameraManager.clearOutputText()
-                            }) {
-                                Text("RESET")
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.black)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.white.opacity(0.9))
-                                    .cornerRadius(6)
-                            }
-                            
-                            Button(action: {
-                                cameraManager.callGPTAPI()
-                            }) {
-                                Text("GPT")
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.black)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.blue.opacity(0.9))
-                                    .cornerRadius(6)
-                            }
-                        }
-                        .padding(.top, 8)
-                        .padding(.leading, 8),
-                        alignment: .topLeading
-                    )
-                    .overlay(
                         // Top right corner info
                         VStack(alignment: .trailing, spacing: 4) {
                             Text("Current: \(cameraManager.framePrediction.uppercased())")
@@ -129,12 +100,18 @@ struct CameraView: View {
                 
                 // Status / Output
                 VStack(spacing: 0) {
+                    // Black border separator
+                    Rectangle()
+                        .fill(Color.black)
+                        .frame(height: 10)
+                        .padding(.horizontal, 16)
+                    
                     // Main prediction display - takes full bottom space
                     ScrollView {
                         ScrollViewReader { proxy in
-                            Text(cameraManager.finalOutputText.isEmpty ? "Currently analyzing sign language gesture..." : cameraManager.finalOutputText)
-                                .onChange(of: cameraManager.finalOutputText) { newValue in
-                                    print("DEBUG: Text display updated to: '\(newValue)'")
+                            Text(cameraManager.displayText.isEmpty ? "Start signing..." : cameraManager.displayText)
+                                .onChange(of: cameraManager.displayText) { newValue in
+                                    print("DEBUG: Display text updated to: '\(newValue)'")
                                     print("DEBUG: Camera session running: \(cameraManager.isSessionRunning)")
                                 }
                                 .font(.title)
@@ -164,9 +141,6 @@ struct CameraView: View {
                 cameraManager.startSession()
             }
         }
-        .sheet(isPresented: $showingSettings) {
-            SettingsView()
-        }
     }
 }
 
@@ -185,6 +159,7 @@ class CameraManager: NSObject, ObservableObject {
     
     // String storage system for concatenating characters
     @Published var finalOutputText = ""
+    @Published var displayText = "" // Text to display in real-time
     private let maxTextLength = 200
     
     // Buffer system for improving prediction accuracy
@@ -265,6 +240,7 @@ class CameraManager: NSObject, ObservableObject {
                     
                     // Reset text when starting camera
                     self.finalOutputText = ""
+                    self.displayText = ""
                     self.rawString = ""
                     self.predictionBuffer.removeAll()
                     
@@ -364,7 +340,11 @@ class CameraManager: NSObject, ObservableObject {
                 rawString = String(rawString.dropFirst())
             }
             
+            // Update display text to show raw string in real-time
+            displayText = rawString
+            
             print("DEBUG: Raw string updated to: '\(rawString)'")
+            print("DEBUG: Display text updated to: '\(displayText)'")
             
             // Clear the buffer for next batch
             predictionBuffer.removeAll()
@@ -405,6 +385,7 @@ class CameraManager: NSObject, ObservableObject {
     // Method to clear the output text
     func clearOutputText() {
         finalOutputText = ""
+        displayText = ""
         rawString = ""
         predictionBuffer.removeAll()
     }
@@ -426,6 +407,7 @@ class CameraManager: NSObject, ObservableObject {
             print("DEBUG: Invalid URL for GPT API")
             // Fallback to showing raw string
             finalOutputText = rawString
+            displayText = rawString
             print("DEBUG: Fallback due to invalid URL - showing raw string: '\(rawString)'")
             print("DEBUG: isSessionRunning: \(isSessionRunning)")
             return
@@ -465,18 +447,19 @@ class CameraManager: NSObject, ObservableObject {
                 
                 if let processedText = json["prose"] as? String {
                     print("DEBUG: GPT processed text: '\(processedText)'")
-                    // Replace finalOutputText with GPT result
+                    // Replace both finalOutputText and displayText with GPT result
                     self.finalOutputText = processedText
+                    self.displayText = processedText
                     print("DEBUG: Updated finalOutputText to: '\(processedText)'")
+                    print("DEBUG: Updated displayText to: '\(processedText)'")
                     print("DEBUG: isSessionRunning: \(self.isSessionRunning)")
-                    print("DEBUG: finalOutputText is now: '\(self.finalOutputText)'")
                 } else {
                     // Fallback to showing raw string
                     self.finalOutputText = self.rawString
+                    self.displayText = self.rawString
                     print("DEBUG: No prose in response - showing raw string: '\(self.rawString)'")
                     print("DEBUG: Available keys in response: \(Array(json.keys))")
                     print("DEBUG: isSessionRunning: \(self.isSessionRunning)")
-                    print("DEBUG: finalOutputText is now: '\(self.finalOutputText)'")
                 }
             }
         }.resume()
@@ -546,48 +529,48 @@ class CameraPreview: UIView {
 }
 
 // MARK: - Settings
-struct SettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                VStack(spacing: 8) {
-                    Image(systemName: "gearshape.fill").font(.system(size: 50)).foregroundColor(.blue)
-                    Text("Settings").font(.largeTitle).fontWeight(.bold)
-                    Text("Configure your sign language app").font(.subheadline).foregroundColor(.secondary)
-                }
-                Spacer()
-                VStack(spacing: 16) {
-                    SettingsRow(icon: "camera.fill", title: "Camera Settings", description: "Configure camera preferences")
-                    SettingsRow(icon: "brain.head.profile", title: "Model Settings", description: "Adjust AI model parameters")
-                    SettingsRow(icon: "textformat", title: "Language Settings", description: "Choose output language")
-                    SettingsRow(icon: "bell.fill", title: "Notifications", description: "Manage app notifications")
-                    SettingsRow(icon: "questionmark.circle.fill", title: "Help & Support", description: "Get help and support")
-                }
-                Spacer()
-                Text("Sign Language Recognition App").font(.caption).foregroundColor(.secondary).padding(.bottom, 20)
-            }
-            .padding()
-            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() } } }
-        }
-    }
-}
+// struct SettingsView: View {
+//     @Environment(\.dismiss) private var dismiss
+//     var body: some View {
+//         NavigationView {
+//             VStack(spacing: 20) {
+//                 VStack(spacing: 8) {
+//                     Image(systemName: "gearshape.fill").font(.system(size: 50)).foregroundColor(.blue)
+//                     Text("Settings").font(.largeTitle).fontWeight(.bold)
+//                     Text("Configure your sign language app").font(.subheadline).foregroundColor(.secondary)
+//                 }
+//                 Spacer()
+//                 VStack(spacing: 16) {
+//                     SettingsRow(icon: "camera.fill", title: "Camera Settings", description: "Configure camera preferences")
+//                     SettingsRow(icon: "brain.head.profile", title: "Model Settings", description: "Adjust AI model parameters")
+//                     SettingsRow(icon: "textformat", title: "Language Settings", description: "Choose output language")
+//                     SettingsRow(icon: "bell.fill", title: "Notifications", description: "Manage app notifications")
+//                     SettingsRow(icon: "questionmark.circle.fill", title: "Help & Support", description: "Get help and support")
+//                 }
+//                 Spacer()
+//                 Text("Sign Language Recognition App").font(.caption).foregroundColor(.secondary).padding(.bottom, 20)
+//             }
+//             .padding()
+//             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() } } }
+//         }
+//     }
+// }
 
-struct SettingsRow: View {
-    let icon: String, title: String, description: String
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon).font(.title2).foregroundColor(.blue).frame(width: 30)
-            VStack(alignment: .leading) {
-                Text(title).font(.headline)
-                Text(description).font(.caption).foregroundColor(.secondary)
-            }
-            Spacer()
-            Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
-        }
-        .padding().background(Color(.systemGray6)).cornerRadius(12)
-    }
-}
+// struct SettingsRow: View {
+//     let icon: String, title: String, description: String
+//     var body: some View {
+//         HStack(spacing: 16) {
+//             Image(systemName: icon).font(.title2).foregroundColor(.blue).frame(width: 30)
+//             VStack(alignment: .leading) {
+//                 Text(title).font(.headline)
+//                 Text(description).font(.caption).foregroundColor(.secondary)
+//             }
+//             Spacer()
+//             Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+//         }
+//         .padding().background(Color(.systemGray6)).cornerRadius(12)
+//     }
+// }
 
 // MARK: - Delegate (Frame → JPEG → Base64 → Backend)
 extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {

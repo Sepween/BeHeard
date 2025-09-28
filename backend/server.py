@@ -199,7 +199,7 @@ async def process_text(request: TextProcessRequest):
                 "Turn it into a short, natural prose sentence. "
                 "Example: 'thisiprety' → 'This is pretty.'\n\n"
                 "If the input cannot be reasonably transcribed into a prose sentence, "
-                "just return exactly: 'Cannot process sentence, please retry'.\n\n"
+                f"just return exactly: {request.text}.\n\n"
                 f"Now process this: {request.text}"
             ),
         )
