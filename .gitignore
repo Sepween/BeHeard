@@ -20,7 +20,6 @@ Thumbs.db
 # Large model files and data
 *.pt
 *.h5
-*.pkl
 *.joblib
 prediction_pipeline/data/orig_data/
 datasets/
