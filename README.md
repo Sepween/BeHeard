@@ -1,7 +1,7 @@
 # BeHeard - Real-Time Sign Language Recognition App
 
 <div align="center">
-  <img src="icon.png" alt="BeHeard Logo" width="200" height="200">
+  <img src="iOSAPP/iOSApp/Assets.xcassets/AppIcon.appiconset/icon-60.png" alt="BeHeard Logo" width="200" height="200">
   
   **Breaking communication barriers through AI-powered sign language recognition**
   
