@@ -148,10 +148,22 @@ async def predict_sign_language(request: ImageRequest):
         if img is None:
             raise ValueError("Failed to decode image")
         
-        print(f"INFO: Processing image for sign language prediction, shape: {img.shape}")
+        # Rotate image 90 degrees clockwise
+        img_rotated = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
         
-        # Extract hand landmarks using the predictor
-        landmarks = predictor.extract_hand_landmarks(img)
+        # Save the rotated image to iphone_images folder
+        # import time
+        # timestamp = int(time.time() * 1000)  # milliseconds timestamp
+        # iphone_images_dir = "iphone_images"
+        # os.makedirs(iphone_images_dir, exist_ok=True)
+        # image_filename = f"{iphone_images_dir}/iphone_image_{timestamp}.jpg"
+        # cv2.imwrite(image_filename, img_rotated)
+        # print(f"INFO: Saved rotated image to {image_filename}")
+        
+        # print(f"INFO: Processing rotated image for sign language prediction, shape: {img_rotated.shape}")
+        
+        # Extract hand landmarks using the rotated image
+        landmarks = predictor.extract_hand_landmarks(img_rotated)
         
         frame_prediction = "unknown"
         has_hand_detected = False
