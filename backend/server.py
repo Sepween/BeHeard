@@ -125,7 +125,8 @@ async def predict_sign_language(request: ImageRequest):
             raise ValueError("Failed to decode image")
         
         # Rotate image 90 degrees clockwise
-        img_rotated = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+        #img_rotated = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+        img_rotated = img
         
         # Save the rotated image to iphone_images folder
         # import time
@@ -196,6 +197,7 @@ async def process_text(request: TextProcessRequest):
             model="gpt-5-nano",
             input=(
                 "The input will be a jumbled string without spaces, like 'thisiprety'. "
+                "The input will be in the correct order, but with incorrect or extra letters occationally. "
                 "Turn it into a natural prose sentence. "
                 "If the input cannot be reasonably transcribed into a prose sentence, only return your best guess output, nothing else. "
                 # "just return exactly: cannot determine.\n\n"

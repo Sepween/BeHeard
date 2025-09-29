@@ -174,7 +174,7 @@ class CameraManager: NSObject, ObservableObject {
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
     private var currentCameraPosition: AVCaptureDevice.Position = .back
     
-    private let baseURL = "http://100.64.9.182:8001"
+    private let baseURL = "http://35.2.97.150:8001"
     private var lastProcessTime = Date()
     private let processingInterval: TimeInterval = 0.05
     private var lastTapTime = Date()
